@@ -9,6 +9,16 @@ import { ThemeToggle } from '@/components/chat/theme-toggle';
 import { Code2, Sparkles, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
+const AI_API_URL = 'https://yass3r4099-gemma-4-server.hf.space';
+
+const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي متخصص في تطوير تطبيقات الويب Full-Stack. أنت خبير في:
+- Frontend: React, Next.js, TypeScript, Tailwind CSS, shadcn/ui
+- Backend: Node.js, Next.js API Routes, Prisma ORM, REST APIs
+- قواعد البيانات: PostgreSQL, SQLite, MongoDB
+- أدوات التطوير: Git, Docker, Vercel
+
+أجب دائماً باللغة العربية. قدم أكواد نظيفة ومنظمة مع شرح مبسط.`;
+
 export default function Home() {
   const {
     activeConversationId, isGenerating, isLoading,
@@ -26,16 +36,13 @@ export default function Home() {
   const handleSend = useCallback(async (content: string) => {
     let currentId = activeConversationId;
 
-    // Create conversation if none active
     if (!currentId) {
       await createConversation();
-      // Read the ID directly after creation (no arbitrary timeout)
       currentId = useChatStore.getState().activeConversationId;
       if (!currentId) return;
     }
 
     setIsGenerating(true);
-
     await addMessage(currentId, 'user', content);
 
     // Add empty assistant message locally
@@ -48,7 +55,6 @@ export default function Home() {
       ),
     }));
 
-    // Get ALL messages for context (user + assistant) for multi-turn memory
     const conv = useChatStore.getState().conversations.find((c) => c.id === currentId);
     const historyMessages = conv?.messages
       .filter((m: any) => m.content !== '')
@@ -56,43 +62,42 @@ export default function Home() {
 
     try {
       abortRef.current = new AbortController();
-      const response = await fetch('/api/chat', {
+
+      // Call HF Space API directly (bypasses Netlify 10s timeout)
+      const allMessages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...historyMessages,
+      ];
+
+      const response = await fetch(`${AI_API_URL}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: historyMessages }),
+        body: JSON.stringify({
+          model: 'smolm2-1.7b',
+          messages: allMessages,
+          temperature: 0.7,
+          max_tokens: 1024,
+          stream: false,
+        }),
         signal: abortRef.current.signal,
       });
 
-      if (!response.ok) throw new Error('فشل الاتصال');
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('لا يمكن قراءة الاستجابة');
+      const data = await response.json();
+      const fullContent = data.choices?.[0]?.message?.content || '';
 
-      const decoder = new TextDecoder();
-      let fullContent = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.content) {
-                fullContent += parsed.content;
-                updateLastAssistantMessage(fullContent);
-              }
-            } catch { /* skip */ }
-          }
-        }
-      }
-
-      // Save final assistant message to Supabase
       if (fullContent) {
+        // Simulate word-by-word streaming for visual effect
+        const words = fullContent.split(' ');
+        let displayed = '';
+        for (const word of words) {
+          displayed += (displayed ? ' ' : '') + word;
+          updateLastAssistantMessage(displayed);
+          await new Promise(r => setTimeout(r, 25));
+        }
+
+        // Save to Supabase
         await fetch('/api/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -101,7 +106,7 @@ export default function Home() {
       }
     } catch (error) {
       if (error instanceof Error && error.name !== 'AbortError') {
-        updateLastAssistantMessage('❌ حدث خطأ أثناء معالجة طلبك.');
+        updateLastAssistantMessage('حدث خطأ أثناء معالجة طلبك. حاول مرة أخرى.');
       }
     } finally {
       setIsGenerating(false);
@@ -116,7 +121,7 @@ export default function Home() {
       <div className="flex h-dvh items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">جاري تحميل المحادثات من Supabase...</p>
+          <p className="text-sm text-muted-foreground">جاري تحميل المحادثات...</p>
         </div>
       </div>
     );
@@ -135,7 +140,7 @@ export default function Home() {
               <h1 className="text-sm font-bold text-foreground flex items-center gap-2">
                 مساعد Full-Stack الذكي
                 <Badge variant="secondary" className="text-[10px] h-5 px-1.5 gap-1 font-normal">
-                  <Sparkles className="h-3 w-3" /> Gemma 4 + Supabase
+                  <Sparkles className="h-3 w-3" /> AI + Supabase
                 </Badge>
               </h1>
               <p className="text-[11px] text-muted-foreground/60">متخصص في تطوير تطبيقات الويب الحديثة</p>

@@ -1,6 +1,30 @@
 {
   "version": 4,
   "routes": {
+    "/": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/",
+      "dataRoute": "/index.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
     "/_global-error": {
       "experimentalBypassFor": [
         {
@@ -49,37 +73,13 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
-    },
-    "/": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/",
-      "dataRoute": "/index.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "8a5bc17e167892a4d6c5d15a242d6101",
-    "previewModeSigningKey": "771be9abfc5fe8cedd065ae4dd59c6595be43d852c8e836c73e6f8edb56b0ef5",
-    "previewModeEncryptionKey": "e15c9b79a1d7b39ec1fcfda9f9de2f1af319cb060e301a2eee0ea06eb94deb84"
+    "previewModeId": "36ea5ab88b715d9aa2db18f3db00e1a2",
+    "previewModeSigningKey": "385b19449a45ffcab411ebabeed94bdeebe7b2467b06632b3e01189933eda2a6",
+    "previewModeEncryptionKey": "5041ff03b7b2ce266c2aadfc0c893479cddf92ea7374d33eb147a673baca5d0f"
   }
 }

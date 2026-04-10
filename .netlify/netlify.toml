@@ -6,18 +6,22 @@ redirectsOrigin = "inline"
 [functions."*"]
 
 [[plugins]]
-origin = "default"
+origin = "config"
 package = "@netlify/plugin-nextjs"
 
 [plugins.inputs]
 
 [build]
-publish = "/home/z/my-project/.next"
-publishOrigin = "ui"
-commandOrigin = "ui"
-command = "bun run build"
+publish = "/tmp/ai-chat-gemma4/.next"
+publishOrigin = "config"
+commandOrigin = "config"
+command = "npm run build"
 
 [build.environment]
+NEXT_PUBLIC_SUPABASE_URL = "https://uuslujxtsrtbvjihcdzw.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_SD_IG-nqT4E4ohaVDYsNlQ_0aAdmWSu"
+SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1c2x1anh0c3J0YnlqaWhjZHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NDI4NjUwNSwiZXhwIjoxODU5ODYyNTA1fQ"
+GEMMA_API_URL = "https://yass3r4099-gemma-4-server.hf.space"
 
 [build.processing]
 
