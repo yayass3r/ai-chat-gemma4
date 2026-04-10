@@ -71,4 +71,4 @@ __pycache__/
 
 # IDE
 .idea/
-.vscode/
+.vscode/gemma-server/

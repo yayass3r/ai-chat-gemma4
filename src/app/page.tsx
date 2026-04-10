@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 export default function Home() {
   const {
     activeConversationId, isGenerating, isLoading,
-    loadConversations, createConversation, addMessage, updateLastAssistantMessage, setIsGenerating, getActiveConversation,
+    loadConversations, createConversation, addMessage,
+    updateLastAssistantMessage, setIsGenerating, getActiveConversation,
   } = useChatStore();
 
   const abortRef = useRef<AbortController | null>(null);
@@ -23,13 +24,15 @@ export default function Home() {
   }, [loadConversations]);
 
   const handleSend = useCallback(async (content: string) => {
-    if (!activeConversationId) {
-      await createConversation();
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    let currentId = activeConversationId;
 
-    const currentId = useChatStore.getState().activeConversationId;
-    if (!currentId) return;
+    // Create conversation if none active
+    if (!currentId) {
+      await createConversation();
+      // Read the ID directly after creation (no arbitrary timeout)
+      currentId = useChatStore.getState().activeConversationId;
+      if (!currentId) return;
+    }
 
     setIsGenerating(true);
 
@@ -37,8 +40,7 @@ export default function Home() {
 
     // Add empty assistant message locally
     const tempId = crypto.randomUUID();
-    set((s: any) => ({
-      ...s,
+    useChatStore.setState((s: any) => ({
       conversations: s.conversations.map((c: any) =>
         c.id === currentId
           ? { ...c, messages: [...c.messages, { id: tempId, role: 'assistant', content: '', timestamp: Date.now() }] }
@@ -46,9 +48,11 @@ export default function Home() {
       ),
     }));
 
-    // Get all messages for context
+    // Get ALL messages for context (user + assistant) for multi-turn memory
     const conv = useChatStore.getState().conversations.find((c) => c.id === currentId);
-    const historyMessages = conv?.messages.filter(m => m.role === 'user' && m.content !== '').map(m => ({ role: m.role, content: m.content })) || [];
+    const historyMessages = conv?.messages
+      .filter((m: any) => m.content !== '')
+      .map((m: any) => ({ role: m.role, content: m.content })) || [];
 
     try {
       abortRef.current = new AbortController();
@@ -107,9 +111,6 @@ export default function Home() {
 
   const activeConversation = getActiveConversation();
 
-  // Helper to update state directly
-  const set = useChatStore.setState;
-
   if (isLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
@@ -134,7 +135,7 @@ export default function Home() {
               <h1 className="text-sm font-bold text-foreground flex items-center gap-2">
                 مساعد Full-Stack الذكي
                 <Badge variant="secondary" className="text-[10px] h-5 px-1.5 gap-1 font-normal">
-                  <Sparkles className="h-3 w-3" /> AI + Supabase
+                  <Sparkles className="h-3 w-3" /> Gemma 4 + Supabase
                 </Badge>
               </h1>
               <p className="text-[11px] text-muted-foreground/60">متخصص في تطوير تطبيقات الويب الحديثة</p>
