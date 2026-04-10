@@ -1,88 +1,80 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { SYSTEM_PROMPT, AI_MODEL, AI_TEMPERATURE, AI_MAX_TOKENS } from '@/lib/constants';
+import { rateLimit } from '@/lib/rate-limit';
 
-const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي متخصص في تطوير تطبيقات الويب Full-Stack. أنت خبير في:
-- Frontend: React, Next.js, TypeScript, Tailwind CSS, shadcn/ui
-- Backend: Node.js, Next.js API Routes, Prisma ORM, REST APIs
-- قواعد البيانات: PostgreSQL, SQLite, MongoDB
-- أدوات التطوير: Git, Docker, Vercel
-
-أجب دائماً باللغة العربية. قدم أكواد نظيفة ومنظمة مع شرح مبسط.`;
-
-const GEMMA_API_URL = process.env.GEMMA_API_URL || 'https://yass3r4099-gemma-4-server.hf.space';
+const AI_API_URL = process.env.GEMMA_API_URL || '';
 
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+  if (!rateLimit(ip, 20, 60000)) {
+    return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
+  }
+
   try {
     const body = await request.json();
     const { messages, stream: clientWantsStream } = body;
 
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: 'messages required' }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
-      });
+    // Input validation
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: 'messages array is required' }, { status: 400 });
+    }
+    if (messages.length > 50) {
+      return NextResponse.json({ error: 'Too many messages (max 50)' }, { status: 400 });
+    }
+    for (const m of messages) {
+      if (typeof m.content !== 'string' || m.content.length > 10000) {
+        return NextResponse.json({ error: 'Invalid message content' }, { status: 400 });
+      }
+    }
+
+    if (!AI_API_URL) {
+      return NextResponse.json({ error: 'AI API not configured' }, { status: 503 });
     }
 
     const allMessages = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...messages.map((m: { role: string; content: string }) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.content,
+        content: m.content.slice(0, 10000),
       })),
     ];
 
-    const apiResponse = await fetch(`${GEMMA_API_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'smolm2-1.7b',
-        messages: allMessages,
-        temperature: 0.7,
-        max_tokens: 1024,
-        stream: false,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000); // 2min timeout
 
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      console.error('AI API error:', apiResponse.status, errorText);
-      return new Response(JSON.stringify({ error: `AI API error: ${apiResponse.status}` }), {
-        status: 502, headers: { 'Content-Type': 'application/json' }
+    try {
+      const apiResponse = await fetch(`${AI_API_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: AI_MODEL,
+          messages: allMessages,
+          temperature: AI_TEMPERATURE,
+          max_tokens: AI_MAX_TOKENS,
+          stream: false,
+        }),
+        signal: controller.signal,
       });
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        console.error('AI API error:', apiResponse.status, errorText);
+        return NextResponse.json({ error: `AI API error: ${apiResponse.status}` }, { status: 502 });
+      }
+
+      const data = await apiResponse.json();
+      const content = data.choices?.[0]?.message?.content || '';
+
+      return NextResponse.json({ content, model: data.model, usage: data.usage });
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await apiResponse.json();
-    const content = data.choices?.[0]?.message?.content || '';
-
-    if (clientWantsStream) {
-      const encoder = new TextEncoder();
-      const wordStream = new ReadableStream({
-        async start(controller) {
-          const words = content.split(' ');
-          for (let i = 0; i < words.length; i++) {
-            const word = (i === 0 ? '' : ' ') + words[i];
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: word })}\n\n`));
-            await new Promise(r => setTimeout(r, 30));
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-        },
-      });
-      return new Response(wordStream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      });
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'AI request timed out' }, { status: 504 });
     }
-
-    return new Response(JSON.stringify({ content, model: data.model, usage: data.usage }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
     console.error('Chat API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal error' }), {
-      status: 500, headers: { 'Content-Type': 'application/json' }
-    });
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

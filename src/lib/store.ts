@@ -9,6 +9,20 @@ interface Conversation {
   updatedAt: number;
 }
 
+interface SupabaseProject {
+  id: string;
+  name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SupabaseMessage {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
 interface ChatStore {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -36,9 +50,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       const res = await fetch('/api/conversations');
       if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
+      const data: SupabaseProject[] = await res.json();
 
-      const convs: Conversation[] = data.map((p: any) => ({
+      const convs: Conversation[] = data.map((p) => ({
         id: p.id,
         title: p.name || 'محادثة جديدة',
         messages: [],
@@ -83,7 +97,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   deleteConversation: async (id: string) => {
     try {
-      await fetch(`/api/conversations?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/conversations?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        console.error('Delete failed:', res.status);
+        return; // Don't delete locally if server fails
+      }
+
       set((s) => {
         const filtered = s.conversations.filter((c) => c.id !== id);
         return {
@@ -103,11 +122,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       try {
         const res = await fetch(`/api/messages?conversation_id=${id}`);
         if (!res.ok) return;
-        const data = await res.json();
+        const data: SupabaseMessage[] = await res.json();
 
-        const messages: ChatMessage[] = data.map((m: any) => ({
+        const messages: ChatMessage[] = data.map((m) => ({
           id: m.id,
-          role: m.role,
+          role: m.role as 'user' | 'assistant',
           content: m.content,
           timestamp: new Date(m.created_at).getTime(),
         }));

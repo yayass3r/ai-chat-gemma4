@@ -8,16 +8,14 @@ import { ChatInput } from '@/components/chat/chat-input';
 import { ThemeToggle } from '@/components/chat/theme-toggle';
 import { Code2, Sparkles, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { AI_STREAM_DELAY } from '@/lib/constants';
 
-const AI_API_URL = 'https://yass3r4099-gemma-4-server.hf.space';
-
-const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي متخصص في تطوير تطبيقات الويب Full-Stack. أنت خبير في:
-- Frontend: React, Next.js, TypeScript, Tailwind CSS, shadcn/ui
-- Backend: Node.js, Next.js API Routes, Prisma ORM, REST APIs
-- قواعد البيانات: PostgreSQL, SQLite, MongoDB
-- أدوات التطوير: Git, Docker, Vercel
-
-أجب دائماً باللغة العربية. قدم أكواد نظيفة ومنظمة مع شرح مبسط.`;
+interface ChatMsg {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: number;
+}
 
 export default function Home() {
   const {
@@ -47,57 +45,53 @@ export default function Home() {
 
     // Add empty assistant message locally
     const tempId = crypto.randomUUID();
-    useChatStore.setState((s: any) => ({
-      conversations: s.conversations.map((c: any) =>
+    const conv = useChatStore.getState().conversations;
+    useChatStore.setState((s) => ({
+      conversations: s.conversations.map((c) =>
         c.id === currentId
           ? { ...c, messages: [...c.messages, { id: tempId, role: 'assistant', content: '', timestamp: Date.now() }] }
           : c
       ),
     }));
 
-    const conv = useChatStore.getState().conversations.find((c) => c.id === currentId);
-    const historyMessages = conv?.messages
-      .filter((m: any) => m.content !== '')
-      .map((m: any) => ({ role: m.role, content: m.content })) || [];
+    const currentConv = useChatStore.getState().conversations.find((c) => c.id === currentId);
+    const historyMessages = currentConv?.messages
+      .filter((m: ChatMsg) => m.content !== '')
+      .map((m: ChatMsg) => ({ role: m.role, content: m.content })) || [];
 
     try {
       abortRef.current = new AbortController();
 
-      // Call HF Space API directly (bypasses Netlify 10s timeout)
-      const allMessages = [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...historyMessages,
-      ];
-
-      const response = await fetch(`${AI_API_URL}/v1/chat/completions`, {
+      // Call our API route (server-side - AI URL hidden)
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'smolm2-1.7b',
-          messages: allMessages,
-          temperature: 0.7,
-          max_tokens: 1024,
+          messages: historyMessages,
           stream: false,
         }),
         signal: abortRef.current.signal,
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
 
       const data = await response.json();
-      const fullContent = data.choices?.[0]?.message?.content || '';
+      const fullContent = data.content || '';
 
       if (fullContent) {
-        // Simulate word-by-word streaming for visual effect
+        // Simulate word-by-word streaming for smooth UX
         const words = fullContent.split(' ');
         let displayed = '';
         for (const word of words) {
           displayed += (displayed ? ' ' : '') + word;
           updateLastAssistantMessage(displayed);
-          await new Promise(r => setTimeout(r, 25));
+          await new Promise(r => setTimeout(r, AI_STREAM_DELAY));
         }
 
-        // Save to Supabase
+        // Save assistant response to Supabase
         await fetch('/api/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -106,7 +100,10 @@ export default function Home() {
       }
     } catch (error) {
       if (error instanceof Error && error.name !== 'AbortError') {
-        updateLastAssistantMessage('حدث خطأ أثناء معالجة طلبك. حاول مرة أخرى.');
+        const msg = error.message.includes('timed out')
+          ? 'الاستجابة استغرقت وقتاً طويلاً. حاول مرة أخرى.'
+          : 'حدث خطأ أثناء معالجة طلبك. حاول مرة أخرى.';
+        updateLastAssistantMessage(msg);
       }
     } finally {
       setIsGenerating(false);
